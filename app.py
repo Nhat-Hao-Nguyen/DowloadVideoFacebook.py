@@ -167,8 +167,8 @@ if video_url:
             st.markdown("**🖥️ Cách 2: Tải qua Server (tự gộp)**")
 
         st.caption(
-            "Cách 1: tốc độ tối đa, không lo sập web, hỗ trợ file lớn (độ phân giải cao có thể tách hình/tiếng). "
-            "Cách 2: server tự tải và gộp thành 1 file MP4 hoàn chỉnh."
+            "Cách 1: Tốc độ tối đa, không lo sập web, hỗ trợ file lớn (độ phân giải cao có thể tách hình/tiếng).\n "
+            "Cách 2: Server tự tải và gộp thành 1 file MP4 hoàn chỉnh. Chỉ tải được video < 1GB"
         )
         st.write("---")
 
