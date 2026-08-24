@@ -2,6 +2,7 @@ import streamlit as st
 import yt_dlp
 import os
 import re
+import requests
 from datetime import datetime
 
 st.set_page_config(page_title="Facebook Video Downloader", page_icon="🎬", layout="wide")
@@ -15,6 +16,16 @@ def format_size(bytes_value):
         return 0, "Không rõ"
     size_mb = bytes_value / (1024 * 1024)
     return size_mb, f"{size_mb:.1f} MB"
+
+
+def get_remote_size_bytes(url):
+    """Dự phòng: khi yt-dlp không có sẵn filesize, gọi HEAD request để lấy dung lượng thật từ header"""
+    try:
+        resp = requests.head(url, allow_redirects=True, timeout=5)
+        size_bytes = int(resp.headers.get('Content-Length', 0))
+        return size_bytes
+    except Exception:
+        return 0
 
 
 def clean_and_shorten_title(title, max_words=5):
@@ -41,11 +52,16 @@ def extract_video_info(url):
             audio_formats = []
             for f in formats:
                 file_size_bytes = f.get('filesize') or f.get('filesize_approx') or 0
-                size_mb, size_label = format_size(file_size_bytes)
 
                 is_video = f.get('vcodec') != 'none' and f.get('height') and f.get('url')
                 # Audio-only: có tiếng nhưng không có hình (vcodec none hoặc height rỗng)
                 is_audio_only = f.get('acodec') != 'none' and (f.get('vcodec') == 'none' or not f.get('height')) and f.get('url')
+
+                # Nếu yt-dlp không có sẵn filesize, gọi HEAD request để lấy dung lượng thật
+                if not file_size_bytes and (is_video or is_audio_only):
+                    file_size_bytes = get_remote_size_bytes(f['url'])
+
+                size_mb, size_label = format_size(file_size_bytes)
 
                 if is_video:
                     video_formats.append({
@@ -54,7 +70,8 @@ def extract_video_info(url):
                         'url': f['url'],
                         'size_mb': size_mb,
                         'size_label': size_label,
-                        'height': f['height']
+                        'height': f['height'],
+                        'has_audio': f.get('acodec') not in (None, 'none')  # video đã có sẵn tiếng hay chưa
                     })
                 elif is_audio_only:
                     audio_formats.append({
@@ -155,12 +172,28 @@ if video_url:
         )
         st.write("---")
 
+        if audio_formats:
+            best_audio = sorted(audio_formats, key=lambda a: a['abr'], reverse=True)[0]
+            best_audio_mb = best_audio['size_mb']
+        else:
+            best_audio = None
+            best_audio_mb = 0
+
         for idx, item in enumerate(video_formats):
             res_col, c1_col, c2_col = st.columns([2, 2, 3])
 
+            # Dung lượng dự kiến khi gộp: nếu video đã có sẵn tiếng thì giữ nguyên,
+            # nếu chưa thì cộng thêm dung lượng audio tốt nhất
+            if item['has_audio'] or not best_audio:
+                merged_mb = item['size_mb']
+            else:
+                merged_mb = item['size_mb'] + best_audio_mb
+
             with res_col:
                 st.markdown(f"🎬 **{item['resolution']}**")
-                st.caption(item['size_label'])
+                st.caption(f"Video: {item['size_label']}")
+                if not item['has_audio'] and best_audio:
+                    st.caption(f"Gộp (video+audio): ~{merged_mb:.1f} MB")
 
             with c1_col:
                 st.markdown(
@@ -172,9 +205,9 @@ if video_url:
                 )
 
             with c2_col:
-                too_large = item['size_mb'] > 1024
+                too_large = merged_mb > 1024
                 if too_large:
-                    st.caption("⚠️ File quá lớn (>1GB), nên dùng Cách 1.")
+                    st.caption(f"⚠️ Gộp xong ước tính ~{merged_mb:.1f} MB, vượt giới hạn 1GB. Nên dùng Cách 1.")
 
                 server_key = f"server_btn_{idx}"
                 if st.button("🚀 Tải qua Server", key=server_key, disabled=too_large, use_container_width=True):
