@@ -1,44 +1,38 @@
 import streamlit as st
 import yt_dlp
-import os
-import re
-from datetime import datetime
 
 st.set_page_config(page_title="Facebook Video Downloader", page_icon="🎬", layout="centered")
-st.title("🎬 Trình Tải Video Facebook Theo Tiêu Đề")
+st.title("🎬 Trình Tải Video Facebook Tốc Độ Cao")
+st.write("Giải pháp tải trực tiếp từ máy chủ Facebook, không giới hạn dung lượng file.")
 
-def clean_and_shorten_title(title, max_words=5):
-    """Làm sạch tiêu đề, xóa ký tự đặc biệt của Windows và lấy số từ chỉ định"""
-    if not title:
-        return "Video"
-    
-    # Loại bỏ các ký tự cấm đặt tên file trên Windows: \ / : * ? " < > |
-    title_clean = re.sub(r'[\/*?:"<>|]', '', title)
-    # Loại bỏ dấu xuống dòng và khoảng trắng thừa
-    title_clean = " ".join(title_clean.split())
-    
-    # Tách thành các từ và lấy tối đa số từ quy định
-    words = title_clean.split()
-    short_title = "_".join(words[:max_words])
-    
-    # Nếu tiêu đề rỗng sau khi lọc, trả về mặc định
-    return short_title if short_title else "Video"
-
-def get_video_formats(url):
-    """Trích xuất danh sách định dạng và tiêu đề gốc của video"""
-    ydl_opts = {'nocheckcertificate': True}
+def extract_direct_links(url):
+    """Chỉ trích xuất link tải trực tiếp từ Facebook, KHÔNG tải video về server"""
+    ydl_opts = {
+        'nocheckcertificate': True,
+        'format': 'bestvideo+bestaudio/best', # Lấy các định dạng tốt nhất
+    }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(url, download=False) # download=False để không lưu về server
             formats = info.get('formats', [])
-            available_resolutions = {}
+            
+            download_links = []
             for f in formats:
-                if f.get('vcodec') != 'none' and f.get('height'):
-                    res_name = f"{f['height']}p"
-                    available_resolutions[res_name] = f['format_id']
-            return available_resolutions, info.get('title', 'Facebook_Video')
+                # Lọc lấy các luồng có link trực tiếp và định dạng rõ ràng
+                if f.get('url') and f.get('height'):
+                    # Xác định loại luồng (Video có tiếng hoặc Video không tiếng)
+                    acodec = f.get('acodec')
+                    status = "Có tiếng" if acodec and acodec != 'none' else "Chỉ có hình (Cần ghép)"
+                    
+                    download_links.append({
+                        'resolution': f"{f['height']}p",
+                        'url': f['url'],
+                        'status': status,
+                        'ext': f.get('ext', 'mp4')
+                    })
+            return download_links, info.get('title', 'Facebook_Video')
         except Exception as e:
-            st.error(f"Không thể lấy thông tin video: {e}")
+            st.error(f"Không thể lấy link video: {e}")
             return None, None
 
 video_url = st.text_input("Nhập link video Facebook:", placeholder="https://facebook.com...")
@@ -46,59 +40,28 @@ video_url = st.text_input("Nhập link video Facebook:", placeholder="https://fa
 if video_url:
     video_url = video_url.strip()
     
-    if 'formats_dict' not in st.session_state or st.session_state.get('last_url') != video_url:
-        with st.spinner("Đang phân tích video, vui lòng đợi giây lát..."):
-            formats_dict, original_title = get_video_formats(video_url)
-            if formats_dict:
-                st.session_state['formats_dict'] = formats_dict
-                st.session_state['original_title'] = original_title
-                st.session_state['last_url'] = video_url
-            else:
-                st.session_state['formats_dict'] = None
-
-    formats_dict = st.session_state.get('formats_dict')
-    
-    if formats_dict:
-        sorted_res = sorted(formats_dict.keys(), key=lambda x: int(x.replace('p', '')))
+    with st.spinner("Đang bóc tách link tải trực tiếp, vui lòng đợi..."):
+        links, title = extract_direct_links(video_url)
         
-        # Tạo phần tiêu đề rút gọn (Ví dụ lấy 5 từ đầu tiên)
-        short_name = clean_and_shorten_title(st.session_state['original_title'], max_words=5)
-        current_time = datetime.now().strftime("%H%M%S")
+    if links:
+        st.success(f"Tìm thấy video: **{title[:60]}...**")
+        st.write("---")
+        st.subheader("🔗 Danh sách link tải trực tiếp:")
+        st.caption("Mẹo: Nhấp chuột phải vào nút tải -> Chọn 'Lưu liên kết thành...' (Save link as...) để tải về máy.")
         
-        # Tên file hoàn chỉnh: Tieu_De_Rut_Gon_GioPhutGiay_DoPhanGiai.mp4
-        final_filename = f"{short_name}_{current_time}_{st.selectbox('Chọn độ phân giải:', sorted_res)}"
+        # Sắp xếp hiển thị từ độ phân giải cao đến thấp
+        links = sorted(links, key=lambda x: int(x['resolution'].replace('p', '')), reverse=True)
         
-        st.info(f"📋 Tiêu đề gốc: {st.session_state['original_title']}")
-        st.success(f"💾 Tên file dự kiến khi tải về: `{final_filename}.mp4`")
-        
-        if st.button("Xử lý Video để Tải xuống"):
-            selected_res = final_filename.split('_')[-1]
-            format_id = formats_dict[selected_res]
-            temp_filename = f"temp_{current_time}.mp4"
-            
-            with st.spinner("Đang chuẩn bị file..."):
-                ydl_opts = {
-                    'format': f'{format_id}+bestaudio/best',
-                    'merge_output_format': 'mp4',
-                    'outtmpl': temp_filename, 
-                    'nocheckcertificate': True,     
-                    'restrictfilenames': True,     
-                }
-                
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([video_url])
-                    
-                    if os.path.exists(temp_filename):
-                        with open(temp_filename, "rb") as f:
-                            video_bytes = f.read()
-                        
-                        st.download_button(
-                            label="📥 Bấm vào đây để lưu video về máy",
-                            data=video_bytes,
-                            file_name=f"{final_filename}.mp4",
-                            mime="video/mp4"
-                        )
-                        os.remove(temp_filename)
-                except Exception as e:
-                    st.error(f"Có lỗi xảy ra: {e}")
+        for item in links:
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                st.markdown(f"🔹 **Độ phân giải {item['resolution']}** ({item['status']})")
+            with col2:
+                # Tạo thẻ HTML thẻ A để trình duyệt người dùng tự click tự tải thẳng từ Facebook
+                st.markdown(
+                    f'<a href="{item["url"]}" target="_blank" style="text-decoration: none;">'
+                    f'<button style="background-color: #FFCC00; color: black; border: none; '
+                    f'padding: 5px 15px; border-radius: 5px; font-weight: bold; cursor: pointer;">'
+                    f'Tải về {item["resolution"]}</button></a>', 
+                    unsafe_allow_html=True
+                )
