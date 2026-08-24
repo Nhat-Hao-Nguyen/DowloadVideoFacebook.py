@@ -109,7 +109,15 @@ def download_and_merge(video_url, chosen_format, title):
     return temp_filename, final_name
 
 
-video_url = st.text_input("Nhập link video Facebook:", placeholder="https://facebook.com...")
+col_input, col_btn = st.columns([6, 1], vertical_alignment="bottom")
+
+with col_input:
+    video_url = st.text_input("Nhập link video Facebook:", placeholder="https://facebook.com...")
+
+with col_btn:
+    st.write("")          # tạo khoảng trống cho thẳng hàng
+    st.write("")
+    go_btn = st.button("➡️", use_container_width=True)
 
 if video_url:
     video_url = video_url.strip()
@@ -167,7 +175,7 @@ if video_url:
             st.markdown("**🖥️ Cách 2: Tải qua Server (tự gộp)**")
 
         st.caption(
-            "Cách 1: Tốc độ tối đa, không lo sập web, hỗ trợ file lớn (độ phân giải cao có thể tách hình/tiếng).\n "
+            "Cách 1: Tốc độ tối đa, không lo sập web, hỗ trợ file lớn (độ phân giải cao có thể tách hình/tiếng).  \n"
             "Cách 2: Server tự tải và gộp thành 1 file MP4 hoàn chỉnh. Chỉ tải được video < 1GB"
         )
         st.write("---")
