@@ -38,11 +38,16 @@ def extract_video_info(url):
             thumbnail_url = info.get('thumbnail')
 
             video_formats = []
+            audio_formats = []
             for f in formats:
-                if f.get('vcodec') != 'none' and f.get('height') and f.get('url'):
-                    file_size_bytes = f.get('filesize') or f.get('filesize_approx') or 0
-                    size_mb, size_label = format_size(file_size_bytes)
+                file_size_bytes = f.get('filesize') or f.get('filesize_approx') or 0
+                size_mb, size_label = format_size(file_size_bytes)
 
+                is_video = f.get('vcodec') != 'none' and f.get('height') and f.get('url')
+                # Audio-only: có tiếng nhưng không có hình (vcodec none hoặc height rỗng)
+                is_audio_only = f.get('acodec') != 'none' and (f.get('vcodec') == 'none' or not f.get('height')) and f.get('url')
+
+                if is_video:
                     video_formats.append({
                         'resolution': f"{f['height']}p",
                         'format_id': f['format_id'],
@@ -51,10 +56,19 @@ def extract_video_info(url):
                         'size_label': size_label,
                         'height': f['height']
                     })
-            return video_formats, thumbnail_url, info.get('title', 'Facebook_Video')
+                elif is_audio_only:
+                    audio_formats.append({
+                        'format_id': f['format_id'],
+                        'url': f['url'],
+                        'size_mb': size_mb,
+                        'size_label': size_label,
+                        'abr': f.get('abr') or 0  # bitrate audio, dùng để chọn bản tốt nhất
+                    })
+
+            return video_formats, audio_formats, thumbnail_url, info.get('title', 'Facebook_Video')
         except Exception as e:
             st.error(f"Không thể kết nối lấy dữ liệu video: {e}")
-            return None, None, None
+            return None, None, None, None
 
 
 def download_and_merge(video_url, chosen_format, title):
@@ -84,7 +98,7 @@ if video_url:
     video_url = video_url.strip()
 
     with st.spinner("Đang phân tích cấu trúc dữ liệu video..."):
-        video_formats, thumbnail_url, title = extract_video_info(video_url)
+        video_formats, audio_formats, thumbnail_url, title = extract_video_info(video_url)
 
     if video_formats:
         st.success(f"Tìm thấy video: **{title[:80]}...**")
@@ -97,6 +111,29 @@ if video_url:
             thumb_col, _ = st.columns([1, 2])
             with thumb_col:
                 st.image(thumbnail_url, use_container_width=True)
+
+        # ==========================================
+        # LINK AUDIO GỐC (dùng chung, vì video độ phân giải cao thường tách riêng tiếng)
+        # ==========================================
+        if audio_formats:
+            best_audio = sorted(audio_formats, key=lambda a: a['abr'], reverse=True)[0]
+            st.info(
+                "🎵 **Lưu ý:** Với độ phân giải cao, file 'Lấy Link Gốc' bên dưới có thể **không có tiếng** "
+                "(Facebook tách riêng luồng hình và luồng tiếng). Tải thêm link audio gốc bên dưới nếu cần ghép lại."
+            )
+            audio_res_col, audio_link_col, _ = st.columns([2, 2, 3])
+            with audio_res_col:
+                st.markdown("🎵 **Audio gốc**")
+                bitrate_label = f"{int(best_audio['abr'])}kbps" if best_audio['abr'] else "Không rõ bitrate"
+                st.caption(f"{best_audio['size_label']} · {bitrate_label}")
+            with audio_link_col:
+                st.markdown(
+                    f'<a href="{best_audio["url"]}" target="_blank">'
+                    f'<button style="background-color: #1DB954; color: white; border: none; '
+                    f'padding: 6px 12px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%;">'
+                    f'Lấy Link Audio Gốc</button></a>',
+                    unsafe_allow_html=True
+                )
 
         st.write("---")
 
