@@ -74,19 +74,21 @@ def get_base_ydl_opts(platform: str, for_download: bool = False) -> dict:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/131.0.0.0 Mobile Safari/537.36"
             )
+            player_skip = ["webpage"]
         else:
-            # Khi LẤY DANH SÁCH FORMAT: dùng mweb + web để có nhiều độ phân giải hơn
-            clients = ["mweb", "web_embedded", "android"]
+            # Khi LẤY DANH SÁCH: dùng nhiều client để có đủ độ phân giải cao
+            clients = ["mweb", "web_embedded", "android", "web"]
             ua = (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/131.0.0.0 Safari/537.36"
             )
+            player_skip = []  # không skip để lấy nhiều format hơn
 
         opts["extractor_args"] = {
             "youtube": {
                 "player_client": clients,
-                "player_skip": ["webpage"],
+                "player_skip": player_skip,
             }
         }
         opts["http_headers"] = {
@@ -112,17 +114,16 @@ def extract_video_info(url: str, platform: str):
             audio_formats = []
 
             for f in formats:
+                # Chỉ lấy format có URL trực tiếp (để nút "Lấy Link Gốc" hoạt động)
+                if not f.get("url"):
+                    continue
+
                 file_size_bytes = f.get("filesize") or f.get("filesize_approx") or 0
 
-                is_video = (
-                    f.get("vcodec") != "none"
-                    and f.get("height")
-                    and f.get("url")
-                )
+                is_video = f.get("vcodec") != "none" and f.get("height")
                 is_audio_only = (
                     f.get("acodec") != "none"
                     and (f.get("vcodec") == "none" or not f.get("height"))
-                    and f.get("url")
                 )
 
                 if not file_size_bytes and (is_video or is_audio_only):
@@ -131,7 +132,6 @@ def extract_video_info(url: str, platform: str):
                 size_mb, size_label = format_size(file_size_bytes)
 
                 if is_video:
-                    # Ưu tiên format có cả video + audio (đặc biệt quan trọng với YouTube)
                     has_audio = f.get("acodec") not in (None, "none")
                     video_formats.append(
                         {
@@ -159,19 +159,19 @@ def extract_video_info(url: str, platform: str):
                         }
                     )
 
-            # Loại bỏ trùng resolution (giữ bản có audio hoặc size lớn hơn)
+            # Giữ mỗi độ phân giải 1 bản: ưu tiên có tiếng, sau đó size lớn hơn
+            # (vẫn hiển thị cả bản không có tiếng nếu không có bản gộp)
             unique_videos = {}
             for v in video_formats:
                 key = v["height"]
                 if key not in unique_videos:
                     unique_videos[key] = v
                 else:
-                    # Ưu tiên bản đã có audio, sau đó bản lớn hơn
                     existing = unique_videos[key]
-                    if (v["has_audio"] and not existing["has_audio"]) or (
-                        v["has_audio"] == existing["has_audio"]
-                        and v["size_mb"] > existing["size_mb"]
-                    ):
+                    # Ưu tiên bản đã có audio
+                    if v["has_audio"] and not existing["has_audio"]:
+                        unique_videos[key] = v
+                    elif v["has_audio"] == existing["has_audio"] and v["size_mb"] > existing["size_mb"]:
                         unique_videos[key] = v
 
             video_formats = list(unique_videos.values())
