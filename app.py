@@ -66,20 +66,31 @@ def get_base_ydl_opts(platform: str, for_download: bool = False) -> dict:
     }
 
     if platform == "youtube":
-        # android hiện bypass SABR experiment tốt nhất → giảm 403
-        # Fallback sang mweb + web_embedded
+        if for_download:
+            # Khi TẢI: ưu tiên android để giảm 403
+            clients = ["android", "mweb", "web_embedded"]
+            ua = (
+                "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Mobile Safari/537.36"
+            )
+        else:
+            # Khi LẤY DANH SÁCH FORMAT: dùng mweb + web để có nhiều độ phân giải hơn
+            clients = ["mweb", "web_embedded", "android"]
+            ua = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            )
+
         opts["extractor_args"] = {
             "youtube": {
-                "player_client": ["android", "mweb", "web_embedded"],
+                "player_client": clients,
                 "player_skip": ["webpage"],
             }
         }
         opts["http_headers"] = {
-            "User-Agent": (
-                "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Mobile Safari/537.36"
-            ),
+            "User-Agent": ua,
             "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
         }
 
