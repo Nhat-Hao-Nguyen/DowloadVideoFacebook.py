@@ -56,7 +56,7 @@ def clean_and_shorten_title(title, max_words=5):
 
 
 def get_base_ydl_opts(platform: str, for_download: bool = False) -> dict:
-    """Tạo options yt-dlp ổn định hơn, đặc biệt với YouTube 403"""
+    """Tạo options yt-dlp ổn định hơn, đặc biệt với YouTube 403 (tháng 8/2026)"""
     opts = {
         "nocheckcertificate": True,
         "quiet": True,
@@ -66,18 +66,19 @@ def get_base_ydl_opts(platform: str, for_download: bool = False) -> dict:
     }
 
     if platform == "youtube":
-        # mweb hiện đang là client ổn định nhất với lỗi 403 (tháng 8/2026)
+        # android hiện bypass SABR experiment tốt nhất → giảm 403
+        # Fallback sang mweb + web_embedded
         opts["extractor_args"] = {
             "youtube": {
-                "player_client": ["mweb", "android", "web"],
+                "player_client": ["android", "mweb", "web_embedded"],
+                "player_skip": ["webpage"],
             }
         }
-        # Thêm headers giống trình duyệt thật
         opts["http_headers"] = {
             "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
+                "Chrome/131.0.0.0 Mobile Safari/537.36"
             ),
             "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
         }
@@ -178,8 +179,11 @@ def download_and_merge(video_url: str, chosen_format: dict, title: str, platform
     final_name = f"{short_name}_{current_time}_{chosen_format['resolution']}"
     temp_filename = f"server_temp_{current_time}.mp4"
 
-    # Format selector: ưu tiên format_id + bestaudio
-    format_str = f"{chosen_format['format_id']}+bestaudio/best"
+    # Nếu format đã có audio thì dùng luôn, không thì ghép bestaudio
+    if chosen_format.get("has_audio"):
+        format_str = chosen_format["format_id"]
+    else:
+        format_str = f"{chosen_format['format_id']}+bestaudio/best"
 
     ydl_opts = get_base_ydl_opts(platform, for_download=True)
     ydl_opts.update(
@@ -207,7 +211,8 @@ def download_best_youtube(video_url: str, title: str):
     ydl_opts = get_base_ydl_opts("youtube", for_download=True)
     ydl_opts.update(
         {
-            "format": "bestvideo+bestaudio/best",
+            # Ưu tiên format gộp sẵn (progressive) để giảm 403, fallback sang tách stream
+            "format": "best[ext=mp4]/bestvideo*+bestaudio/best",
             "merge_output_format": "mp4",
             "outtmpl": temp_filename,
             "restrictfilenames": True,
